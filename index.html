@@ -396,6 +396,10 @@
           </select>
         </div>
         <button class="btn btn-outline btn-block" id="previewToneBtn">▶ Preview tone</button>
+        <div class="sub" id="previewStatus" style="margin-top:8px;min-height:16px;"></div>
+        <div class="banner" style="margin-top:4px;">
+          🔊 Hear nothing? Check: (1) the iPhone's physical <b>Ring/Silent switch</b> is set to ring (not silent - orange means silent), (2) the volume is turned up, (3) Safari's tab isn't muted (long-press the tab switcher icon → check "Mute").
+        </div>
       </div>
 
       <div class="card">
@@ -914,8 +918,15 @@
     alert('Settings saved');
   });
   document.getElementById('previewToneBtn').addEventListener('click', ()=>{
+    const statusEl = document.getElementById('previewStatus');
+    const ctx = ensureAudioCtx();
+    if(!ctx){
+      statusEl.textContent = '⚠️ This browser blocked Web Audio - tones may not play.';
+      return;
+    }
+    statusEl.textContent = `🔊 Playing "${document.getElementById('alarmTone').selectedOptions[0].text}"… (audio state: ${ctx.state})`;
     startBeep(document.getElementById('alarmTone').value);
-    setTimeout(stopBeep, 2200);
+    setTimeout(()=>{ stopBeep(); statusEl.textContent = ''; }, 2200);
   });
   document.getElementById('notifBtn').addEventListener('click', ()=>{
     if(!('Notification' in window)){ alert('Notifications are not supported in this browser.'); return; }
@@ -1058,8 +1069,13 @@
         tone.notes.forEach(note => {
           const o = ctx.createOscillator();
           const g = ctx.createGain();
-          o.type = 'sine'; o.frequency.value = note.freq;
-          g.gain.setValueAtTime(0.18, t);
+          o.type = 'square'; o.frequency.value = note.freq;
+          // Quick attack/release envelope: louder (0.5 peak) and avoids the
+          // clicking pop a hard on/off gain step can cause.
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+          g.gain.setValueAtTime(0.5, t + note.dur - 0.03);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + note.dur);
           o.connect(g); g.connect(ctx.destination);
           o.start(t); o.stop(t + note.dur);
           t += note.dur;
