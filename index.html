@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="DayFlow" />
+<meta name="theme-color" content="#7c86e8" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon.svg" />
+<title>DayFlow – Sleep & Schedule Planner</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  :root{
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --ink:#2c2f45;
+    --ink-2:#767b96;
+    --border:#e8eaf4;
+    --primary:#7c86e8;
+    --primary-2:#a78bfa;
+    --primary-soft:#eef0fd;
+    --sleep:#7c86e8;
+    --sleep-bg:#eef0fd;
+    --class:#5aa9e6;
+    --class-bg:#e8f4fd;
+    --gym:#f2a65a;
+    --gym-bg:#fdf1e4;
+    --free:#5fc39a;
+    --free-bg:#e8f8f1;
+    --meal:#e78ba0;
+    --meal-bg:#fdedf1;
+    --warn:#e0a13a;
+    --warn-bg:#fdf3e2;
+    --danger:#e0685f;
+    --danger-bg:#fdeae8;
+    --sat:env(safe-area-inset-top,0px);
+    --sab:env(safe-area-inset-bottom,0px);
+  }
+  html,body{height:100%;overscroll-behavior:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{max-width:520px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;}
+
+  /* Header */
+  .header{
+    background:linear-gradient(135deg,var(--primary),var(--primary-2));
+    color:#fff;
+    padding:calc(var(--sat) + 18px) 20px 22px;
+    border-radius:0 0 28px 28px;
+    box-shadow:0 8px 24px rgba(124,134,232,.28);
+  }
+  .header h1{font-size:22px;font-weight:800;letter-spacing:-.4px;}
+  .header p{font-size:13px;opacity:.85;margin-top:3px;}
+  .header .clock{
+    margin-top:16px;font-size:38px;font-weight:800;letter-spacing:-1px;
+  }
+  .header .date{font-size:12px;opacity:.8;margin-top:2px;}
+
+  .content{flex:1;padding:16px 16px calc(90px + var(--sab));}
+
+  /* Cards */
+  .card{
+    background:var(--card);border-radius:20px;padding:18px;
+    margin-bottom:14px;box-shadow:0 2px 10px rgba(44,47,69,.06);
+  }
+  .card h2{font-size:15px;font-weight:700;margin-bottom:4px;}
+  .card .sub{font-size:12.5px;color:var(--ink-2);margin-bottom:12px;}
+  .label{font-size:11px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
+
+  /* Sleep summary */
+  .sleep-summary{
+    background:linear-gradient(135deg,#8f97ee,#a78bfa);
+    color:#fff;border-radius:22px;padding:20px;margin-bottom:16px;
+    box-shadow:0 8px 20px rgba(124,134,232,.3);
+  }
+  .sleep-row{display:flex;justify-content:space-between;align-items:flex-end;}
+  .sleep-block{text-align:left;}
+  .sleep-block .t{font-size:30px;font-weight:800;letter-spacing:-1px;}
+  .sleep-block .l{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  .sleep-arrow{font-size:20px;opacity:.7;padding-bottom:6px;}
+  .sleep-hours{
+    margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.25);
+    display:flex;justify-content:space-between;align-items:center;font-size:13px;
+  }
+  .sleep-hours b{font-size:16px;}
+  .sleep-note{
+    margin-top:10px;font-size:12px;background:rgba(255,255,255,.16);
+    border-radius:12px;padding:9px 11px;line-height:1.4;
+  }
+
+  /* Timeline */
+  .timeline{position:relative;padding-left:18px;}
+  .tl-item{position:relative;padding:10px 0 10px 16px;border-left:2px solid var(--border);}
+  .tl-item:last-child{border-color:transparent;}
+  .tl-dot{position:absolute;left:-7px;top:14px;width:12px;height:12px;border-radius:50%;border:3px solid var(--card);}
+  .tl-time{font-size:11px;color:var(--ink-2);font-weight:600;}
+  .tl-title{font-size:14px;font-weight:700;margin-top:1px;}
+  .tl-meta{font-size:12px;color:var(--ink-2);margin-top:1px;}
+  .tl-tag{
+    display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;
+    margin-top:5px;letter-spacing:.3px;
+  }
+
+  /* Buttons */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    border:none;border-radius:14px;padding:12px 16px;font-size:14px;font-weight:700;
+    cursor:pointer;transition:transform .1s,opacity .15s;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn-primary{background:var(--primary);color:#fff;}
+  .btn-outline{background:var(--primary-soft);color:var(--primary);}
+  .btn-block{width:100%;}
+  .btn-sm{padding:8px 12px;font-size:12.5px;border-radius:10px;}
+  .btn-danger{background:var(--danger-bg);color:var(--danger);}
+  .btn-ghost{background:transparent;color:var(--ink-2);}
+
+  /* Segmented control */
+  .segmented{display:flex;background:var(--bg);border-radius:12px;padding:4px;gap:4px;}
+  .segmented button{
+    flex:1;border:none;background:transparent;padding:9px 4px;border-radius:9px;
+    font-size:12.5px;font-weight:700;color:var(--ink-2);cursor:pointer;
+  }
+  .segmented button.active{background:var(--card);color:var(--primary);box-shadow:0 1px 4px rgba(0,0,0,.08);}
+
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:6px;}
+  .field input[type=time], .field input[type=text], .field input[type=number], .field select{
+    width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--border);
+    background:var(--bg);font-size:14px;color:var(--ink);font-family:inherit;
+  }
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;}
+  .switch{position:relative;width:46px;height:26px;flex-shrink:0;}
+  .switch input{opacity:0;width:100%;height:100%;position:absolute;margin:0;cursor:pointer;z-index:2;}
+  .switch .track{position:absolute;inset:0;background:var(--border);border-radius:20px;transition:.2s;}
+  .switch .thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+  .switch input:checked + .track{background:var(--primary);}
+  .switch input:checked + .track + .thumb{transform:translateX(20px);}
+
+  /* Day chips */
+  .day-chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;}
+  .day-chip{
+    flex-shrink:0;padding:8px 14px;border-radius:12px;background:var(--bg);
+    font-size:12.5px;font-weight:700;color:var(--ink-2);cursor:pointer;border:1px solid var(--border);
+  }
+  .day-chip.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+
+  .slot-card{
+    border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:8px;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:8px;
+  }
+  .slot-time{font-size:11.5px;font-weight:700;color:var(--primary);}
+  .slot-name{font-size:14px;font-weight:700;margin-top:2px;}
+  .slot-meta{font-size:11.5px;color:var(--ink-2);margin-top:2px;}
+  .slot-empty{
+    text-align:center;padding:22px 10px;color:var(--ink-2);font-size:13px;
+    border:1.5px dashed var(--border);border-radius:14px;
+  }
+
+  /* Alarm list */
+  .alarm-card{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:14px;border-radius:16px;background:var(--bg);margin-bottom:10px;
+  }
+  .alarm-time{font-size:24px;font-weight:800;letter-spacing:-.5px;}
+  .alarm-label{font-size:12.5px;color:var(--ink-2);margin-top:2px;}
+  .alarm-mode{
+    display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;
+    background:var(--sleep-bg);color:var(--primary);padding:3px 8px;border-radius:20px;margin-top:6px;
+  }
+
+  /* Tab bar */
+  .tabbar{
+    position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.92);
+    backdrop-filter:blur(14px);border-top:1px solid var(--border);
+    padding:8px 6px calc(8px + var(--sab));display:flex;z-index:150;
+    max-width:520px;margin:0 auto;
+  }
+  .tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+    background:none;border:none;color:var(--ink-2);font-size:10.5px;font-weight:700;
+    padding:6px 2px;cursor:pointer;border-radius:12px;
+  }
+  .tab.active{color:var(--primary);}
+  .tab .icon{font-size:19px;}
+
+  .view{display:none;animation:fadeIn .25s ease both;}
+  .view.active{display:block;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
+  /* Modal / ringing overlay */
+  .overlay{
+    position:fixed;inset:0;background:linear-gradient(160deg,#6b74e0,#a78bfa);
+    z-index:500;display:none;flex-direction:column;align-items:center;justify-content:center;
+    color:#fff;padding:30px calc(24px + env(safe-area-inset-right)) calc(30px + var(--sab)) calc(24px + env(safe-area-inset-left));
+    text-align:center;
+  }
+  .overlay.show{display:flex;}
+  .overlay .big-icon{font-size:64px;margin-bottom:10px;animation:ring 1s infinite;}
+  @keyframes ring{0%,100%{transform:rotate(0deg);}20%{transform:rotate(-12deg);}40%{transform:rotate(10deg);}60%{transform:rotate(-8deg);}80%{transform:rotate(6deg);}}
+  .overlay h2{font-size:26px;font-weight:800;}
+  .overlay .sub{font-size:14px;opacity:.85;margin-top:6px;}
+  .overlay .challenge{
+    background:rgba(255,255,255,.16);border-radius:18px;padding:16px;margin-top:22px;width:100%;max-width:340px;
+  }
+  .overlay .challenge .item{font-size:20px;font-weight:800;margin:4px 0 10px;}
+  video, canvas.snap{width:100%;border-radius:14px;margin-top:10px;background:#000;}
+  .overlay .actions{display:flex;gap:10px;margin-top:18px;width:100%;max-width:340px;}
+  .overlay .actions .btn{flex:1;}
+  .overlay .status{font-size:12.5px;margin-top:10px;min-height:18px;opacity:.9;}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(30,32,50,.4);z-index:400;display:none;align-items:flex-end;}
+  .modal-bg.show{display:flex;}
+  .modal-sheet{
+    background:var(--card);width:100%;border-radius:24px 24px 0 0;padding:20px 20px calc(20px + var(--sab));
+    max-height:82vh;overflow-y:auto;animation:slideUp .22s ease both;
+  }
+  @keyframes slideUp{from{transform:translateY(30px);opacity:.4;}to{transform:translateY(0);opacity:1;}}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+  .modal-head h3{font-size:17px;font-weight:800;}
+  .close-x{width:30px;height:30px;border-radius:50%;background:var(--bg);border:none;font-size:16px;color:var(--ink-2);cursor:pointer;}
+
+  .banner{
+    background:var(--warn-bg);color:var(--warn);border-radius:14px;padding:12px 14px;
+    font-size:12.5px;line-height:1.45;margin-bottom:14px;display:flex;gap:8px;
+  }
+  .empty-state{text-align:center;padding:30px 10px;color:var(--ink-2);font-size:13px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="header">
+    <h1>DayFlow</h1>
+    <p>Sleep smart around class &amp; gym</p>
+    <div class="clock" id="liveClock">--:--</div>
+    <div class="date" id="liveDate">—</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ================= TODAY ================= -->
+    <div class="view active" id="view-today">
+
+      <div class="banner" id="iosBanner">
+        📱 On iPhone, keep DayFlow added to your Home Screen and open (or the screen on) around alarm time — Safari can't ring alarms while fully closed. Photo-dismiss and today's plan work fully offline.
+      </div>
+
+      <div class="sleep-summary">
+        <div class="label" style="color:#fff;opacity:.85;">Tonight's sleep plan</div>
+        <div class="sleep-row">
+          <div class="sleep-block">
+            <div class="t" id="sumBed">--:--</div>
+            <div class="l">Bedtime</div>
+          </div>
+          <div class="sleep-arrow">➜</div>
+          <div class="sleep-block">
+            <div class="t" id="sumWake">--:--</div>
+            <div class="l">Wake up</div>
+          </div>
+        </div>
+        <div class="sleep-hours">
+          <span>Sleep duration</span>
+          <b id="sumHours">8h 0m</b>
+        </div>
+        <div class="sleep-note" id="sumNote">Building your plan…</div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:10px;">
+          <h2>Today's timeline</h2>
+          <span class="sub" id="todayDayName" style="margin:0;"></span>
+        </div>
+        <div class="timeline" id="timelineBox"></div>
+      </div>
+
+      <div class="card">
+        <h2>Gym today</h2>
+        <div class="sub">Tell DayFlow how today's session went so bedtime stays accurate.</div>
+        <div class="field">
+          <label>Arrival time</label>
+          <input type="time" id="gymStart" value="18:00" />
+        </div>
+        <div class="label">Intensity</div>
+        <div class="segmented" id="gymIntensity">
+          <button data-v="light">Light · 45m</button>
+          <button data-v="normal" class="active">Normal · 1.5h</button>
+          <button data-v="heavy">Heavy · 2h</button>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div style="font-size:13.5px;font-weight:600;">Heavy meal tonight?</div>
+            <div class="sub" style="margin:2px 0 0;">Adds a longer wind-down gap before bed</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="heavyMeal"/><span class="track"></span><span class="thumb"></span></label>
+        </div>
+        <button class="btn btn-primary btn-block" id="recalcBtn">Update tonight's plan</button>
+      </div>
+
+      <div class="card">
+        <div class="row"><h2>Alarms</h2><button class="btn btn-outline btn-sm" id="addAlarmBtn">+ Add</button></div>
+        <div id="alarmList"></div>
+      </div>
+    </div>
+
+    <!-- ================= TIMETABLE ================= -->
+    <div class="view" id="view-timetable">
+      <div class="card">
+        <h2>Weekly class timetable</h2>
+        <div class="sub">Trimester-VI · tap a day to view / edit sessions</div>
+        <div class="day-chips" id="dayChips"></div>
+        <div id="slotList"></div>
+        <button class="btn btn-outline btn-block" id="addSlotBtn" style="margin-top:6px;">+ Add class to this day</button>
+      </div>
+    </div>
+
+    <!-- ================= SETTINGS ================= -->
+    <div class="view" id="view-settings">
+      <div class="card">
+        <h2>Sleep goal</h2>
+        <div class="field">
+          <label>Minimum sleep duration (hours)</label>
+          <input type="number" id="targetHours" min="7" max="10" step="0.5" value="8" />
+        </div>
+        <div class="field">
+          <label>Get-ready &amp; travel buffer before first class (minutes)</label>
+          <input type="number" id="prepBuffer" min="15" max="180" step="5" value="75" />
+        </div>
+        <div class="field">
+          <label>Wind-down time before sleeping (minutes)</label>
+          <input type="number" id="windDown" min="10" max="60" step="5" value="30" />
+        </div>
+        <div class="field">
+          <label>Extra gap after a heavy meal (minutes)</label>
+          <input type="number" id="mealBuffer" min="60" max="240" step="15" value="150" />
+        </div>
+        <button class="btn btn-primary btn-block" id="saveSettingsBtn">Save settings</button>
+      </div>
+
+      <div class="card">
+        <h2>Notifications</h2>
+        <div class="sub">Allow notifications so DayFlow can alert you for wind-down &amp; gym reminders.</div>
+        <button class="btn btn-outline btn-block" id="notifBtn">Enable notifications</button>
+      </div>
+
+      <div class="card">
+        <h2>Alarm tone</h2>
+        <div class="sub">Tones are synthesized live in-browser (no audio files to download). Pick the style your alarms ring with.</div>
+        <div class="field">
+          <label>Tone</label>
+          <select id="alarmTone">
+            <option value="classic">Classic beep</option>
+            <option value="chime">Gentle chime</option>
+            <option value="urgent">Urgent pulse</option>
+          </select>
+        </div>
+        <button class="btn btn-outline btn-block" id="previewToneBtn">▶ Preview tone</button>
+      </div>
+
+      <div class="card">
+        <h2>About &amp; data</h2>
+        <div class="sub">All your schedule, gym logs and alarms are stored only on this device (localStorage). Nothing is uploaded anywhere.</div>
+        <button class="btn btn-danger btn-block" id="resetBtn">Reset all data</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="tabbar">
+    <button class="tab active" data-view="today"><span class="icon">🌙</span>Today</button>
+    <button class="tab" data-view="timetable"><span class="icon">🗓️</span>Timetable</button>
+    <button class="tab" data-view="settings"><span class="icon">⚙️</span>Settings</button>
+  </div>
+</div>
+
+<!-- Add/Edit slot modal -->
+<div class="modal-bg" id="slotModalBg">
+  <div class="modal-sheet">
+    <div class="modal-head"><h3 id="slotModalTitle">Add class</h3><button class="close-x" data-close="slotModalBg">✕</button></div>
+    <div class="field"><label>Subject / label</label><input type="text" id="slotName" placeholder="e.g. Total Rewards" /></div>
+    <div class="row" style="gap:10px;">
+      <div class="field" style="flex:1;"><label>Start</label><input type="time" id="slotStart" /></div>
+      <div class="field" style="flex:1;"><label>End</label><input type="time" id="slotEnd" /></div>
+    </div>
+    <div class="field"><label>Location / faculty (optional)</label><input type="text" id="slotMeta" placeholder="e.g. L08, 2nd floor · Dr Dileep Kumar" /></div>
+    <div class="toggle-row">
+      <div style="font-size:13.5px;font-weight:600;">Hybrid session</div>
+      <label class="switch"><input type="checkbox" id="slotHybrid"/><span class="track"></span><span class="thumb"></span></label>
+    </div>
+    <button class="btn btn-primary btn-block" id="saveSlotBtn">Save class</button>
+    <button class="btn btn-ghost btn-block" id="deleteSlotBtn" style="display:none;margin-top:6px;">Delete class</button>
+  </div>
+</div>
+
+<!-- Add alarm modal -->
+<div class="modal-bg" id="alarmModalBg">
+  <div class="modal-sheet">
+    <div class="modal-head"><h3>New alarm</h3><button class="close-x" data-close="alarmModalBg">✕</button></div>
+    <div class="field"><label>Time</label><input type="time" id="newAlarmTime" /></div>
+    <div class="field"><label>Label</label><input type="text" id="newAlarmLabel" placeholder="e.g. Wake up" /></div>
+    <div class="toggle-row">
+      <div>
+        <div style="font-size:13.5px;font-weight:600;">Require photo to dismiss</div>
+        <div class="sub" style="margin:2px 0 0;">You'll be shown a common item to photograph</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="newAlarmPhoto" checked/><span class="track"></span><span class="thumb"></span></label>
+    </div>
+    <button class="btn btn-primary btn-block" id="saveAlarmBtn">Save alarm</button>
+  </div>
+</div>
+
+<!-- Ringing overlay -->
+<div class="overlay" id="ringOverlay">
+  <div class="big-icon">⏰</div>
+  <h2 id="ringLabel">Wake up</h2>
+  <div class="sub" id="ringTime">--:--</div>
+
+  <div class="challenge" id="challengeBox" style="display:none;">
+    <div class="sub">Find and photograph this item to stop the alarm:</div>
+    <div class="item" id="challengeItem">a cup</div>
+    <video id="camPreview" autoplay playsinline muted></video>
+    <canvas id="camCanvas" class="snap" style="display:none;"></canvas>
+    <div class="status" id="camStatus"></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-outline" id="snoozeBtn">Snooze 5m</button>
+    <button class="btn btn-primary" id="dismissBtn">Take photo</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js" defer></script>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Storage ---------- */
+  const DB_KEY = 'dayflow_v1';
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  function defaultTimetable(){
+    return {
+      Mon: [],
+      Tue: [
+        {id:'t1', name:'L & D', start:'10:10', end:'11:40', meta:'L12, 3rd floor · Dr Umakanata Nayak', hybrid:false},
+        {id:'t2', name:'Total Rewards', start:'14:45', end:'16:15', meta:'L08, 2nd floor', hybrid:true},
+        {id:'t3', name:'Total Rewards', start:'16:30', end:'18:00', meta:'L08, 2nd floor', hybrid:true}
+      ],
+      Wed: [
+        {id:'w1', name:'BS Div A', start:'10:10', end:'11:40', meta:'L06, 2nd floor · Dr Srividya Raghavan', hybrid:false},
+        {id:'w2', name:'MC-Div A', start:'14:00', end:'15:30', meta:'L06, 2nd floor · Dr Dileep Kumar', hybrid:false},
+        {id:'w3', name:'L & D', start:'15:40', end:'17:10', meta:'L12, 3rd floor · Dr Umakanata Nayak', hybrid:false}
+      ],
+      Thu: [
+        {id:'th1', name:'AIM', start:'08:30', end:'10:00', meta:'L06, 2nd floor · Prof Shweta', hybrid:false},
+        {id:'th2', name:'AIM', start:'10:10', end:'11:40', meta:'L06, 2nd floor · Prof Shweta', hybrid:false},
+        {id:'th3', name:'MC-Div A', start:'14:00', end:'15:30', meta:'L06, 2nd floor · Dr Dileep Kumar', hybrid:false},
+        {id:'th4', name:'MC-Div A', start:'15:40', end:'17:10', meta:'L06, 2nd floor · Dr Dileep Kumar', hybrid:false},
+        {id:'th5', name:'R & S', start:'18:15', end:'19:45', meta:'Hybrid', hybrid:true}
+      ],
+      Fri: [
+        {id:'f1', name:'R & S', start:'18:30', end:'20:00', meta:'Hybrid', hybrid:true}
+      ],
+      Sat: [],
+      Sun: []
+    };
+  }
+
+  function defaultState(){
+    return {
+      timetable: defaultTimetable(),
+      settings: { targetHours: 8, prepBuffer: 75, windDown: 30, mealBuffer: 150, alarmTone: 'classic' },
+      today: { gymStart: '18:00', gymIntensity: 'normal', heavyMeal: false },
+      alarms: [
+        {id:'a1', time:'07:00', label:'Wake up', photo:true, active:true},
+        {id:'a2', time:'17:45', label:'Get ready for gym', photo:false, active:true}
+      ]
+    };
+  }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(DB_KEY);
+      if(!raw) { const s = defaultState(); save(s); return s; }
+      const parsed = JSON.parse(raw);
+      return Object.assign(defaultState(), parsed, {
+        timetable: Object.assign(defaultTimetable(), parsed.timetable || {}),
+        settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic'}, parsed.settings || {}),
+        today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false}, parsed.today || {}),
+        alarms: parsed.alarms || []
+      });
+    }catch(e){ const s = defaultState(); save(s); return s; }
+  }
+  function save(s){ localStorage.setItem(DB_KEY, JSON.stringify(s)); }
+
+  let state = load();
+
+  /* ---------- Time helpers ---------- */
+  function toMin(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
+  function toHHMM(min){
+    min = ((min % 1440) + 1440) % 1440;
+    const h = Math.floor(min/60), m = min%60;
+    return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+  }
+  function fmt12(hhmm){
+    const [h,m] = hhmm.split(':').map(Number);
+    const ap = h>=12?'PM':'AM';
+    let hh = h%12; if(hh===0) hh=12;
+    return hh+':'+String(m).padStart(2,'0')+' '+ap;
+  }
+  function todayKey(){
+    const idx = new Date().getDay(); // 0 Sun..6 Sat
+    return DAYS[(idx+6)%7]; // shift so Mon=0
+  }
+  function tomorrowKey(){
+    const idx = (new Date().getDay()+1)%7;
+    return DAYS[(idx+6)%7];
+  }
+  const GYM_DURATION = { light:45, normal:90, heavy:120 };
+
+  /* ---------- Sleep plan engine ---------- */
+  function computePlan(){
+    const s = state.settings;
+    const tKey = todayKey(), nKey = tomorrowKey();
+    const gymStartMin = toMin(state.today.gymStart);
+    const gymDur = GYM_DURATION[state.today.gymIntensity];
+    const gymEndMin = gymStartMin + gymDur;
+
+    // Only classes before this cutoff should drive an early wake-up.
+    // Evening-only class days (e.g. a 6:30pm hybrid session) shouldn't force
+    // an artificially early wake time.
+    const MORNING_CUTOFF_MIN = toMin('13:00');
+    const tomorrowSlots = (state.timetable[nKey]||[]).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
+    const firstClass = tomorrowSlots.find(sl => toMin(sl.start) < MORNING_CUTOFF_MIN);
+    // Work on a continuous timeline where "today" is 0-1440 and "tomorrow"
+    // is 1440-2880, so subtracting hours across the midnight boundary never
+    // produces a bogus negative/huge duration. Only toHHMM() (for display)
+    // wraps this back into a 0-1440 clock time.
+    let wakeMin;
+    let wakeNote;
+    if(firstClass){
+      wakeMin = toMin(firstClass.start) + 1440 - s.prepBuffer;
+      wakeNote = `Based on ${firstClass.name} at ${fmt12(firstClass.start)} tomorrow.`;
+    } else {
+      wakeMin = toMin('08:00') + 1440;
+      wakeNote = tomorrowSlots.length
+        ? `No morning class tomorrow (next up is ${tomorrowSlots[0].name} at ${fmt12(tomorrowSlots[0].start)}) — a relaxed 8:00 AM wake keeps your rhythm steady.`
+        : 'No class tomorrow — a relaxed 8:00 AM wake keeps your rhythm steady.';
+    }
+
+    let mealNote = '';
+    const mealCutoff = gymEndMin + (state.today.heavyMeal ? s.mealBuffer : 90);
+    // Minimum sleep is a floor, not a fixed target — go to bed as early as
+    // is safely possible (right after the gym/meal buffer) so a lighter day
+    // naturally means MORE sleep, not exactly `targetHours`. We only push
+    // bedtime later than that (compressing toward the minimum) when the
+    // meal/gym buffer would otherwise eat into the required minimum.
+    const latestBedForMinimum = wakeMin - s.targetHours*60 - s.windDown;
+    let bedMin;
+    if(mealCutoff <= latestBedForMinimum){
+      bedMin = mealCutoff;
+    } else {
+      bedMin = latestBedForMinimum;
+      mealNote = state.today.heavyMeal
+        ? ' Gym/heavy-meal timing is tight tonight, so bedtime is pushed earlier than ideal after eating to still hit your minimum sleep goal.'
+        : ' Gym timing is tight tonight, so bedtime is pushed earlier than ideal to still hit your minimum sleep goal.';
+    }
+
+    const actualSleepMin = wakeMin - bedMin - s.windDown;
+    // handle bedMin possibly being "today" earlier than gym etc — if bedtime falls after midnight relative reasoning is handled by mod arithmetic in toHHMM
+
+    return {
+      bed: toHHMM(bedMin),
+      wake: toHHMM(wakeMin),
+      sleepHours: Math.max(0, actualSleepMin)/60,
+      gymEnd: toHHMM(gymEndMin),
+      note: (actualSleepMin/60 < s.targetHours - 0.05
+        ? `⚠️ This only gives ~${(actualSleepMin/60).toFixed(1)}h sleep — gym/meal timing is squeezing your night. Consider an earlier gym slot or lighter dinner.`
+        : `${(actualSleepMin/60).toFixed(1)}h of sleep tonight (min goal ${s.targetHours}h). ${wakeNote}${mealNote}`)
+    };
+  }
+
+  /* ---------- Rendering: Today ---------- */
+  function renderToday(){
+    const plan = computePlan();
+    document.getElementById('sumBed').textContent = fmt12(plan.bed);
+    document.getElementById('sumWake').textContent = fmt12(plan.wake);
+    const h = Math.floor(plan.sleepHours), m = Math.round((plan.sleepHours-h)*60);
+    document.getElementById('sumHours').textContent = `${h}h ${m}m`;
+    document.getElementById('sumNote').textContent = plan.note;
+
+    document.getElementById('gymStart').value = state.today.gymStart;
+    document.getElementById('heavyMeal').checked = state.today.heavyMeal;
+    document.querySelectorAll('#gymIntensity button').forEach(b=>{
+      b.classList.toggle('active', b.dataset.v === state.today.gymIntensity);
+    });
+
+    const tKey = todayKey();
+    document.getElementById('todayDayName').textContent = tKey;
+    const slots = (state.timetable[tKey]||[]).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
+
+    const items = [];
+    items.push({time: fmt12(plan.wake), title:'Wake up', meta:'Start of your day', tag:'SLEEP', color:'sleep'});
+    slots.forEach(sl=>{
+      items.push({time: `${fmt12(sl.start)} – ${fmt12(sl.end)}`, title: sl.name, meta: sl.meta + (sl.hybrid?' · Hybrid':''), tag:'CLASS', color:'class'});
+    });
+    const gymDur = GYM_DURATION[state.today.gymIntensity];
+    items.push({time:`${fmt12(state.today.gymStart)} – ${fmt12(plan.gymEnd)}`, title:'Gym', meta:`${state.today.gymIntensity} session · ${gymDur} min`, tag:'GYM', color:'gym'});
+    items.push({time: fmt12(plan.bed), title:'Wind-down & sleep', meta:`Target ${state.settings.targetHours}h of sleep`, tag:'SLEEP', color:'sleep'});
+
+    // sort by minute-of-day using a 24h+ virtual timeline starting at wake
+    const wakeMinToday = toMin(plan.wake);
+    function virtualMin(str){
+      // rebuild raw start minute from item time text isn't reliable; recompute directly below instead
+      return 0;
+    }
+    const timelineEl = document.getElementById('timelineBox');
+    timelineEl.innerHTML = items.map(it=>`
+      <div class="tl-item">
+        <div class="tl-dot" style="background:var(--${it.color});"></div>
+        <div class="tl-time">${it.time}</div>
+        <div class="tl-title">${it.title}</div>
+        <div class="tl-meta">${it.meta}</div>
+        <span class="tl-tag" style="background:var(--${it.color}-bg);color:var(--${it.color});">${it.tag}</span>
+      </div>
+    `).join('');
+
+    renderAlarms();
+  }
+
+  function renderAlarms(){
+    const list = document.getElementById('alarmList');
+    if(!state.alarms.length){
+      list.innerHTML = '<div class="empty-state">No alarms yet. Tap + Add to create one.</div>';
+      return;
+    }
+    list.innerHTML = state.alarms.slice().sort((a,b)=>toMin(a.time)-toMin(b.time)).map(al=>`
+      <div class="alarm-card">
+        <div>
+          <div class="alarm-time">${fmt12(al.time)}</div>
+          <div class="alarm-label">${al.label}</div>
+          ${al.photo ? '<div class="alarm-mode">📷 Photo to dismiss</div>' : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="switch"><input type="checkbox" ${al.active?'checked':''} data-toggle-alarm="${al.id}"/><span class="track"></span><span class="thumb"></span></label>
+          <button class="btn btn-ghost btn-sm" data-del-alarm="${al.id}">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  /* ---------- Timetable view ---------- */
+  let activeDay = todayKey();
+  function renderDayChips(){
+    const box = document.getElementById('dayChips');
+    box.innerHTML = DAYS.map(d=>`<div class="day-chip ${d===activeDay?'active':''}" data-day="${d}">${d}</div>`).join('');
+  }
+  function renderSlots(){
+    const list = document.getElementById('slotList');
+    const slots = (state.timetable[activeDay]||[]).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
+    if(!slots.length){
+      list.innerHTML = '<div class="slot-empty">No classes on '+activeDay+'. Enjoy the free time or add one below.</div>';
+      return;
+    }
+    list.innerHTML = slots.map(sl=>`
+      <div class="slot-card" data-edit-slot="${sl.id}">
+        <div>
+          <div class="slot-time">${fmt12(sl.start)} – ${fmt12(sl.end)}</div>
+          <div class="slot-name">${sl.name}${sl.hybrid?' · Hybrid':''}</div>
+          <div class="slot-meta">${sl.meta||''}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  /* ---------- Settings view ---------- */
+  function renderSettings(){
+    document.getElementById('targetHours').value = state.settings.targetHours;
+    document.getElementById('prepBuffer').value = state.settings.prepBuffer;
+    document.getElementById('windDown').value = state.settings.windDown;
+    document.getElementById('mealBuffer').value = state.settings.mealBuffer;
+    document.getElementById('alarmTone').value = state.settings.alarmTone || 'classic';
+  }
+
+  /* ---------- Tabs ---------- */
+  document.querySelectorAll('.tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('view-'+btn.dataset.view).classList.add('active');
+      if(btn.dataset.view==='timetable'){ renderDayChips(); renderSlots(); }
+      if(btn.dataset.view==='settings'){ renderSettings(); }
+    });
+  });
+
+  /* ---------- Today interactions ---------- */
+  document.getElementById('gymIntensity').addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    state.today.gymIntensity = b.dataset.v; save(state); renderToday();
+  });
+  document.getElementById('gymStart').addEventListener('change', e=>{
+    state.today.gymStart = e.target.value; save(state);
+  });
+  document.getElementById('heavyMeal').addEventListener('change', e=>{
+    state.today.heavyMeal = e.target.checked; save(state);
+  });
+  document.getElementById('recalcBtn').addEventListener('click', ()=>{ save(state); renderToday(); });
+
+  /* ---------- Timetable interactions ---------- */
+  document.getElementById('dayChips').addEventListener('click', e=>{
+    const chip = e.target.closest('.day-chip'); if(!chip) return;
+    activeDay = chip.dataset.day; renderDayChips(); renderSlots();
+  });
+  let editingSlotId = null;
+  function openSlotModal(slot){
+    editingSlotId = slot ? slot.id : null;
+    document.getElementById('slotModalTitle').textContent = slot ? 'Edit class' : 'Add class';
+    document.getElementById('slotName').value = slot ? slot.name : '';
+    document.getElementById('slotStart').value = slot ? slot.start : '10:00';
+    document.getElementById('slotEnd').value = slot ? slot.end : '11:00';
+    document.getElementById('slotMeta').value = slot ? slot.meta : '';
+    document.getElementById('slotHybrid').checked = slot ? !!slot.hybrid : false;
+    document.getElementById('deleteSlotBtn').style.display = slot ? 'block' : 'none';
+    document.getElementById('slotModalBg').classList.add('show');
+  }
+  document.getElementById('addSlotBtn').addEventListener('click', ()=>openSlotModal(null));
+  document.getElementById('slotList').addEventListener('click', e=>{
+    const card = e.target.closest('[data-edit-slot]'); if(!card) return;
+    const id = card.dataset.editSlot;
+    const slot = (state.timetable[activeDay]||[]).find(s=>s.id===id);
+    openSlotModal(slot);
+  });
+  document.getElementById('saveSlotBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('slotName').value.trim();
+    if(!name){ alert('Please enter a subject name'); return; }
+    const data = {
+      name,
+      start: document.getElementById('slotStart').value,
+      end: document.getElementById('slotEnd').value,
+      meta: document.getElementById('slotMeta').value.trim(),
+      hybrid: document.getElementById('slotHybrid').checked
+    };
+    if(!state.timetable[activeDay]) state.timetable[activeDay] = [];
+    if(editingSlotId){
+      const arr = state.timetable[activeDay];
+      const idx = arr.findIndex(s=>s.id===editingSlotId);
+      if(idx>-1) arr[idx] = Object.assign({id:editingSlotId}, data);
+    } else {
+      state.timetable[activeDay].push(Object.assign({id:'s'+Date.now()}, data));
+    }
+    save(state);
+    document.getElementById('slotModalBg').classList.remove('show');
+    renderSlots(); renderToday();
+  });
+  document.getElementById('deleteSlotBtn').addEventListener('click', ()=>{
+    if(!editingSlotId) return;
+    state.timetable[activeDay] = (state.timetable[activeDay]||[]).filter(s=>s.id!==editingSlotId);
+    save(state);
+    document.getElementById('slotModalBg').classList.remove('show');
+    renderSlots(); renderToday();
+  });
+
+  /* ---------- Alarm modal ---------- */
+  document.getElementById('addAlarmBtn').addEventListener('click', ()=>{
+    document.getElementById('newAlarmTime').value = '07:00';
+    document.getElementById('newAlarmLabel').value = '';
+    document.getElementById('newAlarmPhoto').checked = true;
+    document.getElementById('alarmModalBg').classList.add('show');
+  });
+  document.getElementById('saveAlarmBtn').addEventListener('click', ()=>{
+    const time = document.getElementById('newAlarmTime').value;
+    const label = document.getElementById('newAlarmLabel').value.trim() || 'Alarm';
+    const photo = document.getElementById('newAlarmPhoto').checked;
+    state.alarms.push({id:'al'+Date.now(), time, label, photo, active:true});
+    save(state);
+    document.getElementById('alarmModalBg').classList.remove('show');
+    renderAlarms();
+  });
+  document.getElementById('alarmList').addEventListener('click', e=>{
+    const del = e.target.closest('[data-del-alarm]');
+    if(del){ state.alarms = state.alarms.filter(a=>a.id!==del.dataset.delAlarm); save(state); renderAlarms(); return; }
+  });
+  document.getElementById('alarmList').addEventListener('change', e=>{
+    const t = e.target.closest('[data-toggle-alarm]');
+    if(t){
+      const al = state.alarms.find(a=>a.id===t.dataset.toggleAlarm);
+      if(al){ al.active = t.checked; save(state); }
+    }
+  });
+
+  /* ---------- Generic modal close ---------- */
+  document.querySelectorAll('[data-close]').forEach(b=>{
+    b.addEventListener('click', ()=>document.getElementById(b.dataset.close).classList.remove('show'));
+  });
+  document.querySelectorAll('.modal-bg').forEach(bg=>{
+    bg.addEventListener('click', e=>{ if(e.target === bg) bg.classList.remove('show'); });
+  });
+
+  /* ---------- Settings interactions ---------- */
+  document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
+    state.settings.targetHours = parseFloat(document.getElementById('targetHours').value) || 8;
+    state.settings.prepBuffer = parseInt(document.getElementById('prepBuffer').value) || 75;
+    state.settings.windDown = parseInt(document.getElementById('windDown').value) || 30;
+    state.settings.mealBuffer = parseInt(document.getElementById('mealBuffer').value) || 150;
+    state.settings.alarmTone = document.getElementById('alarmTone').value;
+    save(state);
+    renderToday();
+    alert('Settings saved');
+  });
+  document.getElementById('previewToneBtn').addEventListener('click', ()=>{
+    startBeep(document.getElementById('alarmTone').value);
+    setTimeout(stopBeep, 2200);
+  });
+  document.getElementById('notifBtn').addEventListener('click', ()=>{
+    if(!('Notification' in window)){ alert('Notifications are not supported in this browser.'); return; }
+    Notification.requestPermission().then(p=>{
+      alert(p === 'granted' ? 'Notifications enabled.' : 'Notifications not enabled.');
+    });
+  });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    if(confirm('This will erase your timetable, gym log and alarms on this device. Continue?')){
+      localStorage.removeItem(DB_KEY);
+      state = load();
+      renderToday(); renderDayChips(); renderSlots(); renderSettings();
+    }
+  });
+
+  /* ---------- Live clock ---------- */
+  function tickClock(){
+    const now = new Date();
+    document.getElementById('liveClock').textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    document.getElementById('liveDate').textContent = now.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
+    checkAlarms(now);
+  }
+  setInterval(tickClock, 1000);
+  tickClock();
+
+  /* ---------- Alarm ringing engine ---------- */
+  const COMMON_ITEMS = [
+    {name:'a cup or mug', match:['cup','coffee mug','mug']},
+    {name:'your phone charger', match:['plug','power','cable']},
+    {name:'a book or notebook', match:['book','notebook','binder']},
+    {name:'your water bottle', match:['bottle','water bottle']},
+    {name:'a spoon', match:['spoon','wooden spoon']},
+    {name:'your toothbrush', match:['toothbrush']},
+    {name:'a pillow', match:['pillow','cushion']},
+    {name:'your shoes', match:['shoe','running shoe','sandal']},
+    {name:'a remote control', match:['remote control','remote']},
+    {name:'a chair nearby', match:['chair','folding chair']},
+    {name:'your wallet or keys', match:['wallet','key']},
+    {name:'a lamp or light switch', match:['lamp','table lamp','switch']}
+  ];
+  let firedToday = {};
+  let currentChallenge = null;
+  let mobilenetModel = null;
+  let stream = null;
+
+  function loadModel(){
+    if(mobilenetModel || !window.mobilenet) return;
+    window.mobilenet.load().then(m=>{ mobilenetModel = m; }).catch(()=>{});
+  }
+  window.addEventListener('load', ()=>setTimeout(loadModel, 800));
+
+  function checkAlarms(now){
+    const hhmm = now.toTimeString().slice(0,5);
+    const dayStamp = now.toDateString();
+    state.alarms.forEach(al=>{
+      if(!al.active) return;
+      const key = al.id+'_'+dayStamp;
+      if(al.time === hhmm && !firedToday[key]){
+        firedToday[key] = true;
+        ringAlarm(al);
+      }
+    });
+  }
+
+  function ringAlarm(al){
+    document.getElementById('ringLabel').textContent = al.label;
+    document.getElementById('ringTime').textContent = fmt12(al.time);
+    const box = document.getElementById('challengeBox');
+    document.getElementById('dismissBtn').textContent = al.photo ? 'Take photo' : 'Dismiss';
+    if(al.photo){
+      currentChallenge = COMMON_ITEMS[Math.floor(Math.random()*COMMON_ITEMS.length)];
+      document.getElementById('challengeItem').textContent = currentChallenge.name;
+      box.style.display = 'block';
+    } else {
+      box.style.display = 'none';
+      currentChallenge = null;
+    }
+    document.getElementById('camStatus').textContent = '';
+    document.getElementById('ringOverlay').classList.add('show');
+    try{ if(Notification && Notification.permission==='granted') new Notification(al.label, {body:'DayFlow alarm'}); }catch(e){}
+    startBeep(state.settings.alarmTone || 'classic');
+  }
+
+  /* Every tone is synthesized live with the Web Audio API (no audio files to
+     load/cache) - each entry is a list of {freq, dur} notes played on loop
+     until the alarm is dismissed. */
+  const ALARM_TONES = {
+    classic: { notes: [{freq:880, dur:0.35}], gap:600, vibrate:[300,150,300,150,300] },
+    chime:   { notes: [{freq:523.25, dur:0.3}, {freq:659.25, dur:0.45}], gap:1100, vibrate:[200,120,200] },
+    urgent:  { notes: [{freq:660, dur:0.12}, {freq:990, dur:0.12}, {freq:660, dur:0.12}], gap:380, vibrate:[150,80,150,80,150,80,150] }
+  };
+
+  let beepInterval = null, audioCtx = null;
+  function startBeep(toneKey){
+    stopBeep();
+    const tone = ALARM_TONES[toneKey] || ALARM_TONES.classic;
+    try{
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const playSequence = () => {
+        let t = audioCtx.currentTime;
+        tone.notes.forEach(note => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.type = 'sine'; o.frequency.value = note.freq;
+          g.gain.setValueAtTime(0.18, t);
+          o.connect(g); g.connect(audioCtx.destination);
+          o.start(t); o.stop(t + note.dur);
+          t += note.dur;
+        });
+      };
+      playSequence();
+      beepInterval = setInterval(playSequence, tone.gap);
+    }catch(e){}
+    if(navigator.vibrate) navigator.vibrate(tone.vibrate);
+  }
+  function stopBeep(){
+    if(beepInterval){ clearInterval(beepInterval); beepInterval = null; }
+    if(audioCtx){ audioCtx.close().catch(()=>{}); audioCtx = null; }
+  }
+
+  function closeRing(){
+    document.getElementById('ringOverlay').classList.remove('show');
+    stopBeep();
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+    document.getElementById('camPreview').srcObject = null;
+  }
+
+  document.getElementById('snoozeBtn').addEventListener('click', ()=>{
+    closeRing();
+  });
+
+  document.getElementById('dismissBtn').addEventListener('click', async ()=>{
+    if(!currentChallenge){ closeRing(); return; }
+    const video = document.getElementById('camPreview');
+    const statusEl = document.getElementById('camStatus');
+    if(!stream){
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        video.srcObject = stream;
+        statusEl.textContent = 'Point your camera at ' + currentChallenge.name + ', then tap again.';
+        return;
+      }catch(e){
+        statusEl.textContent = 'Camera unavailable — hold the button 3s to confirm manually.';
+        return;
+      }
+    }
+    statusEl.textContent = 'Checking photo…';
+    const canvas = document.getElementById('camCanvas');
+    canvas.width = video.videoWidth || 320; canvas.height = video.videoHeight || 240;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    if(mobilenetModel){
+      try{
+        const preds = await mobilenetModel.classify(canvas);
+        const labels = preds.map(p=>p.className.toLowerCase()).join(' | ');
+        const ok = currentChallenge.match.some(kw => labels.includes(kw));
+        if(ok){
+          statusEl.textContent = '✅ Found it! Alarm dismissed.';
+          setTimeout(closeRing, 700);
+        } else {
+          statusEl.textContent = "Hmm, doesn't look like " + currentChallenge.name + ' yet (' + preds[0].className + '). Try again.';
+        }
+      }catch(e){
+        statusEl.textContent = '✅ Photo captured, alarm dismissed.';
+        setTimeout(closeRing, 500);
+      }
+    } else {
+      statusEl.textContent = '✅ Photo captured, alarm dismissed.';
+      setTimeout(closeRing, 500);
+    }
+  });
+
+  /* ---------- Init ---------- */
+  renderToday();
+  renderDayChips();
+  renderSlots();
+  renderSettings();
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register('sw.js').catch(()=>{});
+    });
+  }
+})();
+</script>
+</body>
+</html>
