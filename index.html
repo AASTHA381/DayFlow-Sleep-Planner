@@ -258,8 +258,11 @@
       </div>
 
       <div class="sleep-summary">
-        <div class="label" style="color:#fff;opacity:.85;">Tonight's sleep plan</div>
-        <div class="sleep-row">
+        <div class="row" style="align-items:flex-start;">
+          <div class="label" style="color:#fff;opacity:.85;margin-bottom:0;">Tonight's sleep plan</div>
+          <button class="btn btn-sm" id="editPlanBtn" style="background:rgba(255,255,255,.18);color:#fff;">✏️ Edit</button>
+        </div>
+        <div class="sleep-row" id="planDisplayRow">
           <div class="sleep-block">
             <div class="t" id="sumBed">--:--</div>
             <div class="l">Bedtime</div>
@@ -269,6 +272,20 @@
             <div class="t" id="sumWake">--:--</div>
             <div class="l">Wake up</div>
           </div>
+        </div>
+        <div class="sleep-row" id="planEditRow" style="display:none;gap:14px;">
+          <div class="sleep-block" style="flex:1;">
+            <label style="font-size:11px;opacity:.8;">Bedtime</label>
+            <input type="time" id="manualBedInput" style="width:100%;padding:8px;border-radius:10px;border:none;font-size:15px;margin-top:4px;" />
+          </div>
+          <div class="sleep-block" style="flex:1;">
+            <label style="font-size:11px;opacity:.8;">Wake up</label>
+            <input type="time" id="manualWakeInput" style="width:100%;padding:8px;border-radius:10px;border:none;font-size:15px;margin-top:4px;" />
+          </div>
+        </div>
+        <div class="row" id="planEditActions" style="display:none;gap:8px;margin-top:10px;">
+          <button class="btn btn-sm btn-block" id="saveManualPlanBtn" style="background:#fff;color:var(--primary);">Save times</button>
+          <button class="btn btn-sm btn-block" id="resetManualPlanBtn" style="background:rgba(255,255,255,.18);color:#fff;">Use suggested</button>
         </div>
         <div class="sleep-hours">
           <span>Sleep duration</span>
@@ -305,7 +322,11 @@
           </div>
           <label class="switch"><input type="checkbox" id="heavyMeal"/><span class="track"></span><span class="thumb"></span></label>
         </div>
-        <button class="btn btn-primary btn-block" id="recalcBtn">Update tonight's plan</button>
+        <div class="field" style="margin-top:4px;margin-bottom:0;">
+          <label>Homework / study time needed tonight (minutes)</label>
+          <input type="number" id="homeworkMinutes" min="0" max="240" step="15" value="0" />
+        </div>
+        <button class="btn btn-primary btn-block" id="recalcBtn" style="margin-top:14px;">Update tonight's plan</button>
       </div>
 
       <div class="card">
@@ -344,6 +365,15 @@
         <div class="field">
           <label>Extra gap after a heavy meal (minutes)</label>
           <input type="number" id="mealBuffer" min="60" max="240" step="15" value="150" />
+        </div>
+        <div class="field">
+          <label>Default wake time (no class the next day)</label>
+          <input type="time" id="defaultWakeTime" value="08:00" />
+        </div>
+        <div class="field">
+          <label>Latest comfortable wake time</label>
+          <input type="time" id="latestWakeTime" value="10:00" />
+          <div class="sub" style="margin-top:6px;">Even on days your first class is in the afternoon/evening, DayFlow won't suggest waking later than this — edit it if you're fine sleeping in more.</div>
         </div>
         <button class="btn btn-primary btn-block" id="saveSettingsBtn">Save settings</button>
       </div>
@@ -482,8 +512,8 @@
   function defaultState(){
     return {
       timetable: defaultTimetable(),
-      settings: { targetHours: 8, prepBuffer: 75, windDown: 30, mealBuffer: 150, alarmTone: 'classic' },
-      today: { gymStart: '18:00', gymIntensity: 'normal', heavyMeal: false },
+      settings: { targetHours: 8, prepBuffer: 75, windDown: 30, mealBuffer: 150, alarmTone: 'classic', defaultWakeTime: '08:00', latestWakeTime: '10:00' },
+      today: { gymStart: '18:00', gymIntensity: 'normal', heavyMeal: false, homeworkMinutes: 0, manualBed: null, manualWake: null },
       alarms: [
         {id:'a1', time:'07:00', label:'Wake up', photo:true, active:true},
         {id:'a2', time:'17:45', label:'Get ready for gym', photo:false, active:true}
@@ -498,8 +528,8 @@
       const parsed = JSON.parse(raw);
       return Object.assign(defaultState(), parsed, {
         timetable: Object.assign(defaultTimetable(), parsed.timetable || {}),
-        settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic'}, parsed.settings || {}),
-        today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false}, parsed.today || {}),
+        settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic',defaultWakeTime:'08:00',latestWakeTime:'10:00'}, parsed.settings || {}),
+        today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false,homeworkMinutes:0,manualBed:null,manualWake:null}, parsed.today || {}),
         alarms: parsed.alarms || []
       });
     }catch(e){ const s = defaultState(); save(s); return s; }
@@ -534,62 +564,77 @@
   /* ---------- Sleep plan engine ---------- */
   function computePlan(){
     const s = state.settings;
-    const tKey = todayKey(), nKey = tomorrowKey();
+    const nKey = tomorrowKey();
     const gymStartMin = toMin(state.today.gymStart);
     const gymDur = GYM_DURATION[state.today.gymIntensity];
     const gymEndMin = gymStartMin + gymDur;
 
-    // Only classes before this cutoff should drive an early wake-up.
-    // Evening-only class days (e.g. a 6:30pm hybrid session) shouldn't force
-    // an artificially early wake time.
-    const MORNING_CUTOFF_MIN = toMin('13:00');
-    const tomorrowSlots = (state.timetable[nKey]||[]).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
-    const firstClass = tomorrowSlots.find(sl => toMin(sl.start) < MORNING_CUTOFF_MIN);
     // Work on a continuous timeline where "today" is 0-1440 and "tomorrow"
     // is 1440-2880, so subtracting hours across the midnight boundary never
     // produces a bogus negative/huge duration. Only toHHMM() (for display)
     // wraps this back into a 0-1440 clock time.
+    const tomorrowSlots = (state.timetable[nKey]||[]).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
+    const firstClass = tomorrowSlots[0];
     let wakeMin;
     let wakeNote;
     if(firstClass){
       wakeMin = toMin(firstClass.start) + 1440 - s.prepBuffer;
       wakeNote = `Based on ${firstClass.name} at ${fmt12(firstClass.start)} tomorrow.`;
+      // A late class means you CAN sleep in - but cap it at a comfortable
+      // "latest wake" so the suggestion doesn't drift into the afternoon.
+      const latestWakeAbs = toMin(s.latestWakeTime || '10:00');
+      if((wakeMin - 1440) > latestWakeAbs){
+        wakeMin = 1440 + latestWakeAbs;
+        wakeNote = `${firstClass.name} isn't until ${fmt12(firstClass.start)} tomorrow, so you can sleep in - capped at your latest comfortable wake time (edit this in Settings).`;
+      }
     } else {
-      wakeMin = toMin('08:00') + 1440;
-      wakeNote = tomorrowSlots.length
-        ? `No morning class tomorrow (next up is ${tomorrowSlots[0].name} at ${fmt12(tomorrowSlots[0].start)}) — a relaxed 8:00 AM wake keeps your rhythm steady.`
-        : 'No class tomorrow — a relaxed 8:00 AM wake keeps your rhythm steady.';
+      wakeMin = toMin(s.defaultWakeTime || '08:00') + 1440;
+      wakeNote = 'No class tomorrow - your usual wake time keeps your rhythm steady.';
     }
 
     let mealNote = '';
-    const mealCutoff = gymEndMin + (state.today.heavyMeal ? s.mealBuffer : 90);
+    const homeworkMin = state.today.homeworkMinutes || 0;
+    const mealCutoff = gymEndMin + (state.today.heavyMeal ? s.mealBuffer : 90) + homeworkMin;
     // Minimum sleep is a floor, not a fixed target — go to bed as early as
-    // is safely possible (right after the gym/meal buffer) so a lighter day
+    // is safely possible (right after gym/meal/homework) so a lighter day
     // naturally means MORE sleep, not exactly `targetHours`. We only push
     // bedtime later than that (compressing toward the minimum) when the
-    // meal/gym buffer would otherwise eat into the required minimum.
+    // meal/gym/homework buffer would otherwise eat into the required minimum.
     const latestBedForMinimum = wakeMin - s.targetHours*60 - s.windDown;
     let bedMin;
     if(mealCutoff <= latestBedForMinimum){
       bedMin = mealCutoff;
     } else {
       bedMin = latestBedForMinimum;
-      mealNote = state.today.heavyMeal
-        ? ' Gym/heavy-meal timing is tight tonight, so bedtime is pushed earlier than ideal after eating to still hit your minimum sleep goal.'
-        : ' Gym timing is tight tonight, so bedtime is pushed earlier than ideal to still hit your minimum sleep goal.';
+      mealNote = homeworkMin > 0
+        ? ' Gym/meal/homework timing is tight tonight, so bedtime is pushed later than ideal to still hit your minimum sleep goal.'
+        : ' Gym timing is tight tonight, so bedtime is pushed later than ideal to still hit your minimum sleep goal.';
     }
 
+    const suggestedBedMin = bedMin, suggestedWakeMin = wakeMin;
+
+    // Manual overrides take priority when set - "Edit" lets you type your
+    // own bedtime/wake time directly instead of using the suggestion.
+    if(state.today.manualWake){ wakeMin = toMin(state.today.manualWake) + 1440; }
+    if(state.today.manualBed){ bedMin = toMin(state.today.manualBed); }
+    const isManual = !!(state.today.manualBed || state.today.manualWake);
+
     const actualSleepMin = wakeMin - bedMin - s.windDown;
-    // handle bedMin possibly being "today" earlier than gym etc — if bedtime falls after midnight relative reasoning is handled by mod arithmetic in toHHMM
+    const sleepHours = Math.max(0, actualSleepMin)/60;
 
     return {
       bed: toHHMM(bedMin),
       wake: toHHMM(wakeMin),
-      sleepHours: Math.max(0, actualSleepMin)/60,
+      suggestedBed: toHHMM(suggestedBedMin),
+      suggestedWake: toHHMM(suggestedWakeMin),
+      isManual,
+      sleepHours,
       gymEnd: toHHMM(gymEndMin),
-      note: (actualSleepMin/60 < s.targetHours - 0.05
-        ? `⚠️ This only gives ~${(actualSleepMin/60).toFixed(1)}h sleep — gym/meal timing is squeezing your night. Consider an earlier gym slot or lighter dinner.`
-        : `${(actualSleepMin/60).toFixed(1)}h of sleep tonight (min goal ${s.targetHours}h). ${wakeNote}${mealNote}`)
+      note: isManual
+        ? `Custom plan - ${sleepHours.toFixed(1)}h of sleep (min goal ${s.targetHours}h). Tap "Use suggested" to let DayFlow recalculate automatically.`
+        : (sleepHours < s.targetHours - 0.05
+          ? `⚠️ This only gives ~${sleepHours.toFixed(1)}h sleep — gym/meal timing is squeezing your night. Consider an earlier gym slot or lighter dinner.`
+          : `${sleepHours.toFixed(1)}h of sleep tonight (min goal ${s.targetHours}h). ${wakeNote}${mealNote}`)
     };
   }
 
@@ -604,9 +649,19 @@
 
     document.getElementById('gymStart').value = state.today.gymStart;
     document.getElementById('heavyMeal').checked = state.today.heavyMeal;
+    document.getElementById('homeworkMinutes').value = state.today.homeworkMinutes || 0;
     document.querySelectorAll('#gymIntensity button').forEach(b=>{
       b.classList.toggle('active', b.dataset.v === state.today.gymIntensity);
     });
+
+    // Manual edit mode for bedtime/wake
+    const isEditing = document.getElementById('planEditRow').style.display !== 'none';
+    document.getElementById('planDisplayRow').style.display = isEditing ? 'none' : 'flex';
+    document.getElementById('editPlanBtn').textContent = plan.isManual ? '✏️ Edit (custom)' : '✏️ Edit';
+    if(!isEditing){
+      document.getElementById('manualBedInput').value = plan.bed;
+      document.getElementById('manualWakeInput').value = plan.wake;
+    }
 
     const tKey = todayKey();
     document.getElementById('todayDayName').textContent = tKey;
@@ -619,6 +674,9 @@
     });
     const gymDur = GYM_DURATION[state.today.gymIntensity];
     items.push({time:`${fmt12(state.today.gymStart)} – ${fmt12(plan.gymEnd)}`, title:'Gym', meta:`${state.today.gymIntensity} session · ${gymDur} min`, tag:'GYM', color:'gym'});
+    if(state.today.homeworkMinutes > 0){
+      items.push({time:`${state.today.homeworkMinutes} min`, title:'Homework / study', meta:'Blocked out before wind-down', tag:'FREE', color:'free'});
+    }
     items.push({time: fmt12(plan.bed), title:'Wind-down & sleep', meta:`Target ${state.settings.targetHours}h of sleep`, tag:'SLEEP', color:'sleep'});
 
     // sort by minute-of-day using a 24h+ virtual timeline starting at wake
@@ -693,6 +751,8 @@
     document.getElementById('windDown').value = state.settings.windDown;
     document.getElementById('mealBuffer').value = state.settings.mealBuffer;
     document.getElementById('alarmTone').value = state.settings.alarmTone || 'classic';
+    document.getElementById('defaultWakeTime').value = state.settings.defaultWakeTime || '08:00';
+    document.getElementById('latestWakeTime').value = state.settings.latestWakeTime || '10:00';
   }
 
   /* ---------- Tabs ---------- */
@@ -718,7 +778,37 @@
   document.getElementById('heavyMeal').addEventListener('change', e=>{
     state.today.heavyMeal = e.target.checked; save(state);
   });
+  document.getElementById('homeworkMinutes').addEventListener('change', e=>{
+    state.today.homeworkMinutes = parseInt(e.target.value) || 0; save(state);
+  });
   document.getElementById('recalcBtn').addEventListener('click', ()=>{ save(state); renderToday(); });
+
+  /* ---------- Manual plan edit ---------- */
+  document.getElementById('editPlanBtn').addEventListener('click', ()=>{
+    const editRow = document.getElementById('planEditRow');
+    const showing = editRow.style.display !== 'none';
+    editRow.style.display = showing ? 'none' : 'flex';
+    document.getElementById('planEditActions').style.display = showing ? 'none' : 'flex';
+    document.getElementById('planDisplayRow').style.display = showing ? 'flex' : 'none';
+  });
+  document.getElementById('saveManualPlanBtn').addEventListener('click', ()=>{
+    state.today.manualBed = document.getElementById('manualBedInput').value || null;
+    state.today.manualWake = document.getElementById('manualWakeInput').value || null;
+    save(state);
+    document.getElementById('planEditRow').style.display = 'none';
+    document.getElementById('planEditActions').style.display = 'none';
+    document.getElementById('planDisplayRow').style.display = 'flex';
+    renderToday();
+  });
+  document.getElementById('resetManualPlanBtn').addEventListener('click', ()=>{
+    state.today.manualBed = null;
+    state.today.manualWake = null;
+    save(state);
+    document.getElementById('planEditRow').style.display = 'none';
+    document.getElementById('planEditActions').style.display = 'none';
+    document.getElementById('planDisplayRow').style.display = 'flex';
+    renderToday();
+  });
 
   /* ---------- Timetable interactions ---------- */
   document.getElementById('dayChips').addEventListener('click', e=>{
@@ -817,6 +907,8 @@
     state.settings.windDown = parseInt(document.getElementById('windDown').value) || 30;
     state.settings.mealBuffer = parseInt(document.getElementById('mealBuffer').value) || 150;
     state.settings.alarmTone = document.getElementById('alarmTone').value;
+    state.settings.defaultWakeTime = document.getElementById('defaultWakeTime').value || '08:00';
+    state.settings.latestWakeTime = document.getElementById('latestWakeTime').value || '10:00';
     save(state);
     renderToday();
     alert('Settings saved');
