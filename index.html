@@ -253,6 +253,10 @@
         📱 On iPhone, keep DayFlow added to your Home Screen and open (or the screen on) around alarm time — Safari can't ring alarms while fully closed. Photo-dismiss and today's plan work fully offline.
       </div>
 
+      <div class="banner" id="soundBanner" style="background:var(--danger-bg);color:var(--danger);cursor:pointer;">
+        🔇 Alarm sound isn't unlocked yet — tap this banner once so your browser allows DayFlow to play the alarm tone later.
+      </div>
+
       <div class="sleep-summary">
         <div class="label" style="color:#fff;opacity:.85;">Tonight's sleep plan</div>
         <div class="sleep-row">
@@ -912,32 +916,72 @@
     urgent:  { notes: [{freq:660, dur:0.12}, {freq:990, dur:0.12}, {freq:660, dur:0.12}], gap:380, vibrate:[150,80,150,80,150,80,150] }
   };
 
-  let beepInterval = null, audioCtx = null;
+  let beepInterval = null;
+  let sharedAudioCtx = null;
+  let audioUnlocked = false;
+
+  /* iOS Safari only allows an AudioContext to actually make sound if it was
+     created/resumed inside a real user gesture (tap/click). An alarm firing
+     on its own later (no tap at that instant) would otherwise stay silent.
+     So we create ONE AudioContext the first time the user taps anywhere in
+     the app, and keep reusing/resuming that same context for every alarm -
+     it never gets created "cold" at ring time. */
+  function ensureAudioCtx(){
+    if(!sharedAudioCtx){
+      try{ sharedAudioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; }
+    }
+    if(sharedAudioCtx.state === 'suspended'){
+      sharedAudioCtx.resume().catch(()=>{});
+    }
+    return sharedAudioCtx;
+  }
+  function unlockAudioOnce(){
+    if(audioUnlocked) return;
+    const ctx = ensureAudioCtx();
+    if(ctx){
+      // Play an inaudible blip so iOS fully commits the context to "running".
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime + 0.05);
+      audioUnlocked = true;
+      const banner = document.getElementById('soundBanner');
+      if(banner) banner.style.display = 'none';
+    }
+  }
+  ['touchstart','click','keydown'].forEach(evt=>{
+    document.addEventListener(evt, unlockAudioOnce, {passive:true});
+  });
+  document.getElementById('soundBanner').addEventListener('click', unlockAudioOnce);
+
   function startBeep(toneKey){
     stopBeep();
     const tone = ALARM_TONES[toneKey] || ALARM_TONES.classic;
-    try{
-      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const ctx = ensureAudioCtx();
+    if(ctx){
       const playSequence = () => {
-        let t = audioCtx.currentTime;
+        if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+        let t = ctx.currentTime;
         tone.notes.forEach(note => {
-          const o = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
           o.type = 'sine'; o.frequency.value = note.freq;
           g.gain.setValueAtTime(0.18, t);
-          o.connect(g); g.connect(audioCtx.destination);
+          o.connect(g); g.connect(ctx.destination);
           o.start(t); o.stop(t + note.dur);
           t += note.dur;
         });
       };
       playSequence();
       beepInterval = setInterval(playSequence, tone.gap);
-    }catch(e){}
+    }
     if(navigator.vibrate) navigator.vibrate(tone.vibrate);
   }
   function stopBeep(){
     if(beepInterval){ clearInterval(beepInterval); beepInterval = null; }
-    if(audioCtx){ audioCtx.close().catch(()=>{}); audioCtx = null; }
+    // Keep sharedAudioCtx alive (just idle) so the NEXT alarm doesn't need
+    // another user gesture to make sound.
   }
 
   function closeRing(){
