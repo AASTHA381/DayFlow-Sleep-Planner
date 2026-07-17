@@ -235,7 +235,47 @@
 </style>
 </head>
 <body>
-<div id="app">
+
+<!-- ============== AUTH SCREEN ============== -->
+<div id="authScreen" style="display:none;min-height:100%;flex-direction:column;justify-content:center;padding:24px;max-width:420px;margin:0 auto;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <div style="font-size:40px;">🌙</div>
+    <h1 style="font-size:22px;font-weight:800;margin-top:6px;">DayFlow</h1>
+    <p style="font-size:13px;color:var(--ink-2);margin-top:4px;">Sign in with your mobile number to sync your schedule across devices.</p>
+  </div>
+
+  <div class="card" id="authConfigMissing" style="display:none;">
+    <h2>Backend not set up yet</h2>
+    <div class="sub" style="line-height:1.5;">
+      Multi-user accounts need a free Firebase project. Until it's configured, DayFlow keeps working in single-device mode (your data stays only on this phone, like before).
+    </div>
+    <button class="btn btn-outline btn-block" id="continueOfflineBtn" style="margin-top:6px;">Continue without an account</button>
+  </div>
+
+  <div class="card" id="authForm">
+    <div class="segmented" style="margin-bottom:16px;">
+      <button type="button" class="active" id="authTabSignIn">Sign in</button>
+      <button type="button" id="authTabSignUp">Create account</button>
+    </div>
+    <div class="field">
+      <label>Mobile number</label>
+      <input type="tel" id="authPhone" placeholder="e.g. 9876543210" autocomplete="tel" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="authPassword" placeholder="At least 6 characters" autocomplete="current-password" />
+    </div>
+    <div class="field" id="authConfirmField" style="display:none;">
+      <label>Confirm password</label>
+      <input type="password" id="authPasswordConfirm" />
+    </div>
+    <div class="sub" id="authError" style="color:var(--danger);min-height:16px;margin-bottom:8px;"></div>
+    <button class="btn btn-primary btn-block" id="authSubmitBtn">Sign in</button>
+    <button class="btn btn-ghost btn-block" id="continueOfflineBtn2" style="margin-top:8px;">Use without an account (this device only)</button>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
 
   <div class="header">
     <h1>DayFlow</h1>
@@ -402,9 +442,15 @@
         </div>
       </div>
 
+      <div class="card" id="accountCard">
+        <h2>Account</h2>
+        <div class="sub" id="accountStatus">Not signed in - using this device only.</div>
+        <button class="btn btn-outline btn-block" id="logoutBtn" style="display:none;margin-top:6px;">Log out</button>
+      </div>
+
       <div class="card">
         <h2>About &amp; data</h2>
-        <div class="sub">All your schedule, gym logs and alarms are stored only on this device (localStorage). Nothing is uploaded anywhere.</div>
+        <div class="sub" id="dataStorageNote">All your schedule, gym logs and alarms are stored only on this device (localStorage). Nothing is uploaded anywhere.</div>
         <button class="btn btn-danger btn-block" id="resetBtn">Reset all data</button>
       </div>
     </div>
@@ -505,12 +551,19 @@
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js" defer></script>
 
+<!-- Firebase (compat build - simplest to use without a bundler). Auth handles
+     login, Firestore stores each user's data in its own isolated document. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script>
 (function(){
   'use strict';
 
   /* ---------- Storage ---------- */
-  const DB_KEY = 'dayflow_v1';
+  // Legacy single-device key, kept only as a fallback/migration source.
+  const LEGACY_DB_KEY = 'dayflow_v1';
   const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
   function defaultTimetable(){
@@ -553,20 +606,51 @@
     };
   }
 
-  function load(){
-    try{
-      const raw = localStorage.getItem(DB_KEY);
-      if(!raw) { const s = defaultState(); save(s); return s; }
-      const parsed = JSON.parse(raw);
-      return Object.assign(defaultState(), parsed, {
-        timetable: Object.assign(defaultTimetable(), parsed.timetable || {}),
-        settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic',defaultWakeTime:'08:00',latestWakeTime:'10:00'}, parsed.settings || {}),
-        today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false,homeworkMinutes:0,manualBed:null,manualWake:null}, parsed.today || {}),
-        alarms: parsed.alarms || []
-      });
-    }catch(e){ const s = defaultState(); save(s); return s; }
+  function mergeWithDefaults(parsed){
+    return Object.assign(defaultState(), parsed, {
+      timetable: Object.assign(defaultTimetable(), parsed.timetable || {}),
+      settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic',defaultWakeTime:'08:00',latestWakeTime:'10:00'}, parsed.settings || {}),
+      today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false,homeworkMinutes:0,manualBed:null,manualWake:null}, parsed.today || {}),
+      alarms: parsed.alarms || []
+    });
   }
-  function save(s){ localStorage.setItem(DB_KEY, JSON.stringify(s)); }
+
+  /* ---------- Per-user account layer ----------
+     - Not signed in: data lives only in localStorage on this device (same
+       behaviour as before accounts existed).
+     - Signed in: data is cached in localStorage under a UID-scoped key for
+       instant offline loads, AND synced to a private Firestore document at
+       users/{uid} so it follows you across devices and never mixes with
+       anyone else's data (enforced by Firestore security rules). */
+  let currentUid = null;   // null = local-only / not signed in
+  let firestoreDoc = null; // Firestore doc ref for the signed-in user, if any
+
+  function localKeyFor(uid){ return uid ? `dayflow_v1_${uid}` : LEGACY_DB_KEY; }
+
+  function loadLocal(uid){
+    try{
+      const raw = localStorage.getItem(localKeyFor(uid));
+      if(!raw){
+        // First time on this device for this account/mode - seed from the
+        // legacy single-device save if one exists (smooth upgrade path).
+        const legacy = uid ? localStorage.getItem(LEGACY_DB_KEY) : null;
+        return legacy ? mergeWithDefaults(JSON.parse(legacy)) : defaultState();
+      }
+      return mergeWithDefaults(JSON.parse(raw));
+    }catch(e){ return defaultState(); }
+  }
+  function saveLocal(uid, s){
+    localStorage.setItem(localKeyFor(uid), JSON.stringify(s));
+  }
+
+  function load(){ return loadLocal(currentUid); }
+
+  function save(s){
+    saveLocal(currentUid, s);
+    if(firestoreDoc){
+      firestoreDoc.set(s).catch(err=>console.warn('DayFlow: cloud sync failed', err));
+    }
+  }
 
   let state = load();
 
@@ -1019,9 +1103,10 @@
     });
   });
   document.getElementById('resetBtn').addEventListener('click', ()=>{
-    if(confirm('This will erase your timetable, gym log and alarms on this device. Continue?')){
-      localStorage.removeItem(DB_KEY);
-      state = load();
+    if(confirm('This will erase your timetable, gym log and alarms' + (currentUid ? ' for this account.' : ' on this device.') + ' Continue?')){
+      localStorage.removeItem(localKeyFor(currentUid));
+      state = defaultState();
+      save(state);
       renderToday(); renderDayChips(); renderSlots(); renderSettings();
     }
   });
@@ -1229,11 +1314,159 @@
     }
   });
 
+  /* ---------- Account / Firebase auth ----------
+     Fill these in from your own Firebase project (free "Spark" plan is
+     enough - no billing needed): Console → Project settings → General →
+     "Your apps" → Web app → SDK setup and configuration. Until you do, the
+     app runs exactly like before (single device, no accounts). */
+  const firebaseConfig = {
+    apiKey: "REPLACE_ME",
+    authDomain: "REPLACE_ME.firebaseapp.com",
+    projectId: "REPLACE_ME",
+    storageBucket: "REPLACE_ME.appspot.com",
+    messagingSenderId: "REPLACE_ME",
+    appId: "REPLACE_ME"
+  };
+  const firebaseConfigured = firebaseConfig.apiKey !== 'REPLACE_ME';
+
+  let auth = null, db = null;
+  if(firebaseConfigured && window.firebase){
+    try{
+      firebase.initializeApp(firebaseConfig);
+      auth = firebase.auth();
+      db = firebase.firestore();
+      db.enablePersistence().catch(()=>{});
+    }catch(e){ console.warn('DayFlow: Firebase init failed', e); }
+  }
+
+  // Firebase Auth has no built-in "phone + password" sign-in without paid
+  // SMS verification, so we use a well-known free workaround: turn the
+  // phone number into a synthetic email address and use normal (free)
+  // email/password auth under the hood. The user only ever sees/types
+  // their mobile number.
+  function phoneToEmail(phone){ return 'u' + phone.replace(/\D/g,'') + '@dayflow.local'; }
+  function normalizePhoneInput(raw){ return raw.replace(/\D/g,''); }
+
+  function friendlyAuthError(e){
+    const map = {
+      'auth/email-already-in-use': 'That mobile number already has an account - try signing in instead.',
+      'auth/user-not-found': "No account with that mobile number yet - try \"Create account\".",
+      'auth/wrong-password': 'Incorrect password.',
+      'auth/invalid-email': 'Enter a valid mobile number.',
+      'auth/weak-password': 'Password must be at least 6 characters.'
+    };
+    return (e && map[e.code]) || (e && e.message) || 'Something went wrong, please try again.';
+  }
+
+  function showAuthScreen(){
+    document.getElementById('authScreen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('authConfigMissing').style.display = firebaseConfigured ? 'none' : 'block';
+    document.getElementById('authForm').style.display = firebaseConfigured ? 'block' : 'none';
+  }
+
+  function startAppForCurrentUser(){
+    state = load();
+    renderToday();
+    renderDayChips();
+    renderSlots();
+    renderSettings();
+    const accountStatus = document.getElementById('accountStatus');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const dataNote = document.getElementById('dataStorageNote');
+    if(currentUid){
+      accountStatus.textContent = 'Signed in - your data syncs to this account only, never shared with other users.';
+      logoutBtn.style.display = 'block';
+      dataNote.textContent = 'Your schedule, gym logs and alarms are private to your account (stored in your own Firestore document) and cached locally for fast, offline-friendly loads.';
+    } else {
+      accountStatus.textContent = 'Not signed in - using this device only.';
+      logoutBtn.style.display = 'none';
+      dataNote.textContent = 'All your schedule, gym logs and alarms are stored only on this device (localStorage). Nothing is uploaded anywhere.';
+    }
+  }
+  function showApp(){
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    startAppForCurrentUser();
+  }
+
+  let authMode = 'signin';
+  function setAuthMode(mode){
+    authMode = mode;
+    document.getElementById('authTabSignIn').classList.toggle('active', mode==='signin');
+    document.getElementById('authTabSignUp').classList.toggle('active', mode==='signup');
+    document.getElementById('authConfirmField').style.display = mode==='signup' ? 'block' : 'none';
+    document.getElementById('authSubmitBtn').textContent = mode==='signup' ? 'Create account' : 'Sign in';
+    document.getElementById('authError').textContent = '';
+  }
+  document.getElementById('authTabSignIn').addEventListener('click', ()=>setAuthMode('signin'));
+  document.getElementById('authTabSignUp').addEventListener('click', ()=>setAuthMode('signup'));
+
+  document.getElementById('authSubmitBtn').addEventListener('click', async ()=>{
+    const errEl = document.getElementById('authError');
+    errEl.textContent = '';
+    const phone = normalizePhoneInput(document.getElementById('authPhone').value.trim());
+    const password = document.getElementById('authPassword').value;
+    if(phone.length < 6){ errEl.textContent = 'Enter a valid mobile number.'; return; }
+    if(password.length < 6){ errEl.textContent = 'Password must be at least 6 characters.'; return; }
+    if(authMode === 'signup'){
+      const confirmPw = document.getElementById('authPasswordConfirm').value;
+      if(password !== confirmPw){ errEl.textContent = "Passwords don't match."; return; }
+    }
+    const email = phoneToEmail(phone);
+    const btn = document.getElementById('authSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Please wait…';
+    try{
+      if(authMode === 'signup'){
+        await auth.createUserWithEmailAndPassword(email, password);
+      } else {
+        await auth.signInWithEmailAndPassword(email, password);
+      }
+      // onAuthStateChanged (below) takes over from here.
+    }catch(e){
+      errEl.textContent = friendlyAuthError(e);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = authMode==='signup' ? 'Create account' : 'Sign in';
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', ()=>{ if(auth) auth.signOut(); });
+  document.getElementById('continueOfflineBtn').addEventListener('click', ()=>{ currentUid = null; firestoreDoc = null; showApp(); });
+  document.getElementById('continueOfflineBtn2').addEventListener('click', ()=>{ currentUid = null; firestoreDoc = null; showApp(); });
+
   /* ---------- Init ---------- */
-  renderToday();
-  renderDayChips();
-  renderSlots();
-  renderSettings();
+  if(firebaseConfigured && auth){
+    auth.onAuthStateChanged(user=>{
+      if(user){
+        currentUid = user.uid;
+        firestoreDoc = db.collection('users').doc(user.uid);
+        // Hydrate from the cloud (covers a new/second device); fall back to
+        // whatever's cached locally if the read fails or we're offline.
+        firestoreDoc.get().then(snap=>{
+          if(snap.exists){
+            state = mergeWithDefaults(snap.data());
+            saveLocal(currentUid, state);
+          } else {
+            state = loadLocal(currentUid);
+            firestoreDoc.set(state).catch(()=>{});
+          }
+          showApp();
+        }).catch(()=>{
+          state = loadLocal(currentUid);
+          showApp();
+        });
+      } else {
+        currentUid = null;
+        firestoreDoc = null;
+        showAuthScreen();
+      }
+    });
+  } else {
+    // No backend configured (or the Firebase SDK failed to load) - behave
+    // exactly like the original single-device, no-accounts app.
+    showAuthScreen();
+  }
 
   if('serviceWorker' in navigator){
     window.addEventListener('load', ()=>{
