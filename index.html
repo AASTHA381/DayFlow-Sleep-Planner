@@ -29,6 +29,8 @@
     --gym-bg:#fdf1e4;
     --free:#5fc39a;
     --free-bg:#e8f8f1;
+    --task:#9b7fd1;
+    --task-bg:#f1eafb;
     --meal:#e78ba0;
     --meal-bg:#fdedf1;
     --warn:#e0a13a;
@@ -342,7 +344,7 @@
         <div class="timeline" id="timelineBox"></div>
       </div>
 
-      <div class="card">
+      <div class="card" id="gymCard">
         <h2>Gym today</h2>
         <div class="sub">Tell DayFlow how today's session went so bedtime stays accurate.</div>
         <div class="field">
@@ -355,6 +357,16 @@
           <button data-v="normal" class="active">Normal · 1.5h</button>
           <button data-v="heavy">Heavy · 2h</button>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="row"><h2>Other tasks today</h2><button class="btn btn-outline btn-sm" id="addTaskBtn">+ Add</button></div>
+        <div class="sub">Anything else on today's plate - study group, errands, family time - so bedtime accounts for it too.</div>
+        <div id="taskList"></div>
+      </div>
+
+      <div class="card">
+        <h2>Evening wind-down</h2>
         <div class="toggle-row">
           <div>
             <div style="font-size:13.5px;font-weight:600;">Heavy meal tonight?</div>
@@ -388,6 +400,17 @@
 
     <!-- ================= SETTINGS ================= -->
     <div class="view" id="view-settings">
+      <div class="card">
+        <h2>Routine</h2>
+        <div class="toggle-row">
+          <div>
+            <div style="font-size:13.5px;font-weight:600;">I have a gym routine</div>
+            <div class="sub" style="margin:2px 0 0;">Turn off if gym isn't part of your day - the Gym card disappears and won't affect your sleep plan.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="gymEnabled" checked/><span class="track"></span><span class="thumb"></span></label>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Sleep goal</h2>
         <div class="field">
@@ -480,6 +503,20 @@
     </div>
     <button class="btn btn-primary btn-block" id="saveSlotBtn">Save class</button>
     <button class="btn btn-ghost btn-block" id="deleteSlotBtn" style="display:none;margin-top:6px;">Delete class</button>
+  </div>
+</div>
+
+<!-- Add/Edit task modal -->
+<div class="modal-bg" id="taskModalBg">
+  <div class="modal-sheet">
+    <div class="modal-head"><h3 id="taskModalTitle">Add task</h3><button class="close-x" data-close="taskModalBg">✕</button></div>
+    <div class="field"><label>Task name</label><input type="text" id="taskName" placeholder="e.g. Study group, errands, family time" /></div>
+    <div class="row" style="gap:10px;">
+      <div class="field" style="flex:1;"><label>Start</label><input type="time" id="taskStart" /></div>
+      <div class="field" style="flex:1;"><label>End</label><input type="time" id="taskEnd" /></div>
+    </div>
+    <button class="btn btn-primary btn-block" id="saveTaskBtn">Save task</button>
+    <button class="btn btn-ghost btn-block" id="deleteTaskBtn" style="display:none;margin-top:6px;">Delete task</button>
   </div>
 </div>
 
@@ -597,8 +634,8 @@
   function defaultState(){
     return {
       timetable: defaultTimetable(),
-      settings: { targetHours: 8, prepBuffer: 75, windDown: 30, mealBuffer: 150, alarmTone: 'classic', defaultWakeTime: '08:00', latestWakeTime: '10:00' },
-      today: { gymStart: '18:00', gymIntensity: 'normal', heavyMeal: false, homeworkMinutes: 0, manualBed: null, manualWake: null },
+      settings: { targetHours: 8, prepBuffer: 75, windDown: 30, mealBuffer: 150, alarmTone: 'classic', defaultWakeTime: '08:00', latestWakeTime: '10:00', gymEnabled: true },
+      today: { gymStart: '18:00', gymIntensity: 'normal', heavyMeal: false, homeworkMinutes: 0, manualBed: null, manualWake: null, tasks: [] },
       alarms: [
         {id:'a1', smart:true, smartOffsetMin:30, smartCutoff:'11:00', smartFallback:'09:15', label:'Wake up / Breakfast', photo:true, active:true},
         {id:'a2', time:'17:45', label:'Get ready for gym', photo:false, active:true}
@@ -609,8 +646,8 @@
   function mergeWithDefaults(parsed){
     return Object.assign(defaultState(), parsed, {
       timetable: Object.assign(defaultTimetable(), parsed.timetable || {}),
-      settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic',defaultWakeTime:'08:00',latestWakeTime:'10:00'}, parsed.settings || {}),
-      today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false,homeworkMinutes:0,manualBed:null,manualWake:null}, parsed.today || {}),
+      settings: Object.assign({targetHours:8,prepBuffer:75,windDown:30,mealBuffer:150,alarmTone:'classic',defaultWakeTime:'08:00',latestWakeTime:'10:00',gymEnabled:true}, parsed.settings || {}),
+      today: Object.assign({gymStart:'18:00',gymIntensity:'normal',heavyMeal:false,homeworkMinutes:0,manualBed:null,manualWake:null,tasks:[]}, parsed.today || {}),
       alarms: parsed.alarms || []
     });
   }
@@ -681,9 +718,11 @@
   function computePlan(){
     const s = state.settings;
     const nKey = tomorrowKey();
+    const gymEnabled = s.gymEnabled !== false;
     const gymStartMin = toMin(state.today.gymStart);
     const gymDur = GYM_DURATION[state.today.gymIntensity];
     const gymEndMin = gymStartMin + gymDur;
+    const tasks = state.today.tasks || [];
 
     // Work on a continuous timeline where "today" is 0-1440 and "tomorrow"
     // is 1440-2880, so subtracting hours across the midnight boundary never
@@ -708,23 +747,39 @@
       wakeNote = 'No class tomorrow - your usual wake time keeps your rhythm steady.';
     }
 
+    // Gather every evening commitment (gym, if you have one, plus any custom
+    // tasks you've logged for today) and use whichever ends latest as the
+    // anchor for "earliest you could reasonably go to bed". If you have no
+    // gym and no tasks logged, there's no such anchor - bedtime is free to
+    // be exactly `targetHours` before wake, with no gym/meal buffer at all.
+    const activityEnds = [];
+    if(gymEnabled) activityEnds.push(gymEndMin);
+    tasks.forEach(t => activityEnds.push(toMin(t.end)));
+    const lastActivityEnd = activityEnds.length ? Math.max(...activityEnds) : null;
+
     let mealNote = '';
     const homeworkMin = state.today.homeworkMinutes || 0;
-    const mealCutoff = gymEndMin + (state.today.heavyMeal ? s.mealBuffer : 90) + homeworkMin;
-    // Minimum sleep is a floor, not a fixed target — go to bed as early as
-    // is safely possible (right after gym/meal/homework) so a lighter day
-    // naturally means MORE sleep, not exactly `targetHours`. We only push
-    // bedtime later than that (compressing toward the minimum) when the
-    // meal/gym/homework buffer would otherwise eat into the required minimum.
     const latestBedForMinimum = wakeMin - s.targetHours*60 - s.windDown;
     let bedMin;
-    if(mealCutoff <= latestBedForMinimum){
-      bedMin = mealCutoff;
+    if(lastActivityEnd !== null){
+      const mealCutoff = lastActivityEnd + (state.today.heavyMeal ? s.mealBuffer : 90) + homeworkMin;
+      // Minimum sleep is a floor, not a fixed target — go to bed as early as
+      // is safely possible (right after gym/tasks/meal/homework) so a
+      // lighter day naturally means MORE sleep, not exactly `targetHours`.
+      // We only push bedtime later than that (compressing toward the
+      // minimum) when the buffer would otherwise eat into the required
+      // minimum.
+      if(mealCutoff <= latestBedForMinimum){
+        bedMin = mealCutoff;
+      } else {
+        bedMin = latestBedForMinimum;
+        mealNote = ' Today\'s activities/meal/homework timing is tight tonight, so bedtime is pushed later than ideal to still hit your minimum sleep goal.';
+      }
     } else {
+      // Nothing logged today (no gym, no tasks) - just hit the minimum
+      // exactly, still leaving room for any homework beforehand.
       bedMin = latestBedForMinimum;
-      mealNote = homeworkMin > 0
-        ? ' Gym/meal/homework timing is tight tonight, so bedtime is pushed later than ideal to still hit your minimum sleep goal.'
-        : ' Gym timing is tight tonight, so bedtime is pushed later than ideal to still hit your minimum sleep goal.';
+      if(homeworkMin > 0) mealNote = ' Homework time is factored in before wind-down.';
     }
 
     const suggestedBedMin = bedMin, suggestedWakeMin = wakeMin;
@@ -749,7 +804,7 @@
       note: isManual
         ? `Custom plan - ${sleepHours.toFixed(1)}h of sleep (min goal ${s.targetHours}h). Tap "Use suggested" to let DayFlow recalculate automatically.`
         : (sleepHours < s.targetHours - 0.05
-          ? `⚠️ This only gives ~${sleepHours.toFixed(1)}h sleep — gym/meal timing is squeezing your night. Consider an earlier gym slot or lighter dinner.`
+          ? `⚠️ This only gives ~${sleepHours.toFixed(1)}h sleep — today's schedule is squeezing your night. Consider moving things earlier or a lighter dinner.`
           : `${sleepHours.toFixed(1)}h of sleep tonight (min goal ${s.targetHours}h). ${wakeNote}${mealNote}`)
     };
   }
@@ -763,12 +818,15 @@
     document.getElementById('sumHours').textContent = `${h}h ${m}m`;
     document.getElementById('sumNote').textContent = plan.note;
 
+    const gymEnabled = state.settings.gymEnabled !== false;
+    document.getElementById('gymCard').style.display = gymEnabled ? 'block' : 'none';
     document.getElementById('gymStart').value = state.today.gymStart;
     document.getElementById('heavyMeal').checked = state.today.heavyMeal;
     document.getElementById('homeworkMinutes').value = state.today.homeworkMinutes || 0;
     document.querySelectorAll('#gymIntensity button').forEach(b=>{
       b.classList.toggle('active', b.dataset.v === state.today.gymIntensity);
     });
+    renderTaskList();
 
     // Manual edit mode for bedtime/wake
     const isEditing = document.getElementById('planEditRow').style.display !== 'none';
@@ -783,26 +841,31 @@
     document.getElementById('todayDayName').textContent = tKey;
     const slots = (state.timetable[tKey]||[]).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
 
-    const items = [];
-    items.push({time: fmt12(plan.wake), title:'Wake up', meta:'Start of your day', tag:'SLEEP', color:'sleep'});
-    slots.forEach(sl=>{
-      items.push({time: `${fmt12(sl.start)} – ${fmt12(sl.end)}`, title: sl.name, meta: sl.meta + (sl.hybrid?' · Hybrid':''), tag:'CLASS', color:'class'});
-    });
-    const gymDur = GYM_DURATION[state.today.gymIntensity];
-    items.push({time:`${fmt12(state.today.gymStart)} – ${fmt12(plan.gymEnd)}`, title:'Gym', meta:`${state.today.gymIntensity} session · ${gymDur} min`, tag:'GYM', color:'gym'});
-    if(state.today.homeworkMinutes > 0){
-      items.push({time:`${state.today.homeworkMinutes} min`, title:'Homework / study', meta:'Blocked out before wind-down', tag:'FREE', color:'free'});
-    }
-    items.push({time: fmt12(plan.bed), title:'Wind-down & sleep', meta:`Target ${state.settings.targetHours}h of sleep`, tag:'SLEEP', color:'sleep'});
-
-    // sort by minute-of-day using a 24h+ virtual timeline starting at wake
+    // Build the timeline as (sortKey, item) pairs so everything - wake,
+    // classes, gym (if enabled), custom tasks, homework, bed - lines up in
+    // real chronological order instead of a fixed hardcoded sequence.
     const wakeMinToday = toMin(plan.wake);
-    function virtualMin(str){
-      // rebuild raw start minute from item time text isn't reliable; recompute directly below instead
-      return 0;
+    const bedMinToday = toMin(plan.bed);
+    const entries = [];
+    entries.push({sort:-1, time: fmt12(plan.wake), title:'Wake up', meta:'Start of your day', tag:'SLEEP', color:'sleep'});
+    slots.forEach(sl=>{
+      entries.push({sort: toMin(sl.start), time: `${fmt12(sl.start)} – ${fmt12(sl.end)}`, title: sl.name, meta: sl.meta + (sl.hybrid?' · Hybrid':''), tag:'CLASS', color:'class'});
+    });
+    if(gymEnabled){
+      const gymDur = GYM_DURATION[state.today.gymIntensity];
+      entries.push({sort: toMin(state.today.gymStart), time:`${fmt12(state.today.gymStart)} – ${fmt12(plan.gymEnd)}`, title:'Gym', meta:`${state.today.gymIntensity} session · ${gymDur} min`, tag:'GYM', color:'gym'});
     }
+    (state.today.tasks||[]).forEach(t=>{
+      entries.push({sort: toMin(t.start), time:`${fmt12(t.start)} – ${fmt12(t.end)}`, title: t.name, meta:'Custom task', tag:'TASK', color:'task'});
+    });
+    if(state.today.homeworkMinutes > 0){
+      entries.push({sort: 1439, time:`${state.today.homeworkMinutes} min`, title:'Homework / study', meta:'Blocked out before wind-down', tag:'FREE', color:'free'});
+    }
+    entries.push({sort: 1440, time: fmt12(plan.bed), title:'Wind-down & sleep', meta:`Target ${state.settings.targetHours}h of sleep`, tag:'SLEEP', color:'sleep'});
+    entries.sort((a,b)=>a.sort-b.sort);
+
     const timelineEl = document.getElementById('timelineBox');
-    timelineEl.innerHTML = items.map(it=>`
+    timelineEl.innerHTML = entries.map(it=>`
       <div class="tl-item">
         <div class="tl-dot" style="background:var(--${it.color});"></div>
         <div class="tl-time">${it.time}</div>
@@ -814,6 +877,24 @@
 
     renderAlarms();
   }
+
+  function renderTaskList(){
+    const list = document.getElementById('taskList');
+    const tasks = (state.today.tasks || []).slice().sort((a,b)=>toMin(a.start)-toMin(b.start));
+    if(!tasks.length){
+      list.innerHTML = '<div class="empty-state">No extra tasks today.</div>';
+      return;
+    }
+    list.innerHTML = tasks.map(t=>`
+      <div class="slot-card" data-edit-task="${t.id}">
+        <div>
+          <div class="slot-time">${fmt12(t.start)} – ${fmt12(t.end)}</div>
+          <div class="slot-name">${t.name}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
 
   /* A "smart" alarm doesn't store a fixed time - it recomputes its ring time
      from TODAY's class timetable each time it's checked/displayed: if there's
@@ -884,6 +965,7 @@
 
   /* ---------- Settings view ---------- */
   function renderSettings(){
+    document.getElementById('gymEnabled').checked = state.settings.gymEnabled !== false;
     document.getElementById('targetHours').value = state.settings.targetHours;
     document.getElementById('prepBuffer').value = state.settings.prepBuffer;
     document.getElementById('windDown').value = state.settings.windDown;
@@ -1002,6 +1084,46 @@
     renderSlots(); renderToday();
   });
 
+  /* ---------- Task modal (per-day custom tasks) ---------- */
+  let editingTaskId = null;
+  function openTaskModal(task){
+    editingTaskId = task ? task.id : null;
+    document.getElementById('taskModalTitle').textContent = task ? 'Edit task' : 'Add task';
+    document.getElementById('taskName').value = task ? task.name : '';
+    document.getElementById('taskStart').value = task ? task.start : '17:00';
+    document.getElementById('taskEnd').value = task ? task.end : '18:00';
+    document.getElementById('deleteTaskBtn').style.display = task ? 'block' : 'none';
+    document.getElementById('taskModalBg').classList.add('show');
+  }
+  document.getElementById('addTaskBtn').addEventListener('click', ()=>openTaskModal(null));
+  document.getElementById('taskList').addEventListener('click', e=>{
+    const card = e.target.closest('[data-edit-task]'); if(!card) return;
+    const task = (state.today.tasks||[]).find(t=>t.id===card.dataset.editTask);
+    openTaskModal(task);
+  });
+  document.getElementById('saveTaskBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('taskName').value.trim();
+    if(!name){ alert('Please enter a task name'); return; }
+    const data = { name, start: document.getElementById('taskStart').value, end: document.getElementById('taskEnd').value };
+    if(!state.today.tasks) state.today.tasks = [];
+    if(editingTaskId){
+      const idx = state.today.tasks.findIndex(t=>t.id===editingTaskId);
+      if(idx>-1) state.today.tasks[idx] = Object.assign({id:editingTaskId}, data);
+    } else {
+      state.today.tasks.push(Object.assign({id:'task'+Date.now()}, data));
+    }
+    save(state);
+    document.getElementById('taskModalBg').classList.remove('show');
+    renderToday();
+  });
+  document.getElementById('deleteTaskBtn').addEventListener('click', ()=>{
+    if(!editingTaskId) return;
+    state.today.tasks = (state.today.tasks||[]).filter(t=>t.id!==editingTaskId);
+    save(state);
+    document.getElementById('taskModalBg').classList.remove('show');
+    renderToday();
+  });
+
   /* ---------- Alarm modal ---------- */
   let editingAlarmId = null;
   function toggleSmartFields(isSmart){
@@ -1073,6 +1195,9 @@
   });
 
   /* ---------- Settings interactions ---------- */
+  document.getElementById('gymEnabled').addEventListener('change', e=>{
+    state.settings.gymEnabled = e.target.checked; save(state); renderToday();
+  });
   document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
     state.settings.targetHours = parseFloat(document.getElementById('targetHours').value) || 8;
     state.settings.prepBuffer = parseInt(document.getElementById('prepBuffer').value) || 75;
